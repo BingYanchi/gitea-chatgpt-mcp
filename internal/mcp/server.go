@@ -10,14 +10,36 @@ import (
 )
 
 func New(client *gitea.Client) *mcp.Server {
+	return newServer(client, false)
+}
+
+func NewOAuth(client *gitea.Client) *mcp.Server {
+	return newServer(client, true)
+}
+
+func newServer(client *gitea.Client, oauth bool) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "gitea-chatgpt-mcp",
-		Version: "0.1.0",
+		Version: "0.2.0",
 	}, nil)
 
-	addReadTools(s, client)
-	addWriteTools(s, client)
+	addReadTools(s, client, oauth)
+	addWriteTools(s, client, oauth)
 	return s
+}
+
+func toolMeta(oauth bool) mcp.Meta {
+	if !oauth {
+		return nil
+	}
+	return mcp.Meta{
+		"securitySchemes": []map[string]any{
+			{
+				"type":   "oauth2",
+				"scopes": []string{"gitea"},
+			},
+		},
+	}
 }
 
 func boolPtr(v bool) *bool { return &v }
@@ -55,10 +77,11 @@ type repoArgs struct {
 	Repo  string `json:"repo" jsonschema:"Gitea repository name"`
 }
 
-func addReadTools(s *mcp.Server, c *gitea.Client) {
+func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_current_user",
 		Description: "Get the authenticated Gitea user.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CurrentUser(ctx)
@@ -72,6 +95,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_repositories",
 		Description: "List repositories visible to the authenticated Gitea user.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listReposArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.ListRepositories(ctx, in.Page, in.Limit)
@@ -81,6 +105,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_repository",
 		Description: "Get metadata for a Gitea repository.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in repoArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetRepository(ctx, in.Owner, in.Repo)
@@ -96,6 +121,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_tree",
 		Description: "List a repository directory. Use path empty for the repository root.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contentsArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetContents(ctx, in.Owner, in.Repo, in.Path, in.Ref)
@@ -104,6 +130,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_file",
 		Description: "Read a repository file and its metadata from a branch, tag, or commit.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contentsArgs) (*mcp.CallToolResult, any, error) {
 		if strings.TrimSpace(in.Path) == "" {
@@ -122,6 +149,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "list_branches",
 		Description: "List branches in a Gitea repository.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in branchesArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.ListBranches(ctx, in.Owner, in.Repo, in.Page, in.Limit)
@@ -136,6 +164,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_branch",
 		Description: "Get one branch, including its current head commit.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in branchArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetBranch(ctx, in.Owner, in.Repo, in.Branch)
@@ -150,6 +179,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_commit",
 		Description: "Get a Git commit by SHA.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in commitArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetCommit(ctx, in.Owner, in.Repo, in.SHA)
@@ -165,6 +195,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "compare_refs",
 		Description: "Compare two repository refs and return commits and file changes.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in compareArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.Compare(ctx, in.Owner, in.Repo, in.Base, in.Head)
@@ -179,6 +210,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_pull_request",
 		Description: "Get a pull request by index.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetPullRequest(ctx, in.Owner, in.Repo, int(in.Index))
@@ -187,6 +219,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_pull_request_diff",
 		Description: "Get the unified diff for a pull request.",
+		Meta:        toolMeta(oauth),
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetPullRequestDiff(ctx, in.Owner, in.Repo, int(in.Index))
@@ -194,7 +227,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client) {
 	})
 }
 
-func addWriteTools(s *mcp.Server, c *gitea.Client) {
+func addWriteTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 	type createBranchArgs struct {
 		Owner     string `json:"owner"`
 		Repo      string `json:"repo"`
@@ -204,6 +237,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "create_branch",
 		Description: "Create a new branch from an existing branch.",
+		Meta:        toolMeta(oauth),
 		Annotations: additiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createBranchArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CreateBranch(ctx, in.Owner, in.Repo, in.NewBranch, in.OldBranch)
@@ -229,6 +263,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "apply_changes",
 		Description: "Apply multiple file create/update/upload/rename/delete operations in one Gitea commit. Prefer a new branch and expected_head_sha for safe agent edits.",
+		Meta:        toolMeta(oauth),
 		Annotations: destructiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in applyArgs) (*mcp.CallToolResult, any, error) {
 		if len(in.Changes) == 0 {
@@ -265,6 +300,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "create_pull_request",
 		Description: "Create a Gitea pull request.",
+		Meta:        toolMeta(oauth),
 		Annotations: additiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createPRArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CreatePullRequest(ctx, in.Owner, in.Repo, in.Title, in.Body, in.Head, in.Base, in.Draft)
