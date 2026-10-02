@@ -22,17 +22,27 @@ func New(client *gitea.Client) *mcp.Server {
 
 func ro() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
-		ReadOnlyHint:  true,
-		OpenWorldHint: true,
+		ReadOnlyHint:    true,
+		DestructiveHint: false,
+		OpenWorldHint:   false,
 	}
 }
 
-func write() *mcp.ToolAnnotations {
+func additiveWrite() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    false,
 		DestructiveHint: false,
 		IdempotentHint:  false,
-		OpenWorldHint:   true,
+		OpenWorldHint:   false,
+	}
+}
+
+func destructiveWrite() *mcp.ToolAnnotations {
+	return &mcp.ToolAnnotations{
+		ReadOnlyHint:    false,
+		DestructiveHint: true,
+		IdempotentHint:  false,
+		OpenWorldHint:   false,
 	}
 }
 
@@ -192,7 +202,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "create_branch",
 		Description: "Create a new branch from an existing branch.",
-		Annotations: write(),
+		Annotations: additiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createBranchArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CreateBranch(ctx, in.Owner, in.Repo, in.NewBranch, in.OldBranch)
 		return nil, v, err
