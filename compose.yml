@@ -1,0 +1,12 @@
+services:
+  gitea-chatgpt-mcp:
+    build: .
+    restart: unless-stopped
+    environment:
+      GITEA_BASE_URL: ${GITEA_BASE_URL}
+      GITEA_TOKEN: ${GITEA_TOKEN}
+      LISTEN_ADDR: ":8080"
+      MCP_PATH: "/mcp"
+      REQUEST_TIMEOUT: "${REQUEST_TIMEOUT:-30s}"
+    ports:
+      - "8080:8080"
