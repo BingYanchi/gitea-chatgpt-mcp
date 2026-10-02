@@ -69,7 +69,7 @@ func main() {
 				Stateless:    true,
 			},
 		)
-		mux.Handle(cfg.MCPPath, bridge.RequireAuth(mcpHandler))
+		mux.Handle(cfg.MCPPath, bridge.RequireAuth(mcpserver.MirrorSecuritySchemes(mcpHandler)))
 		log.Printf("OAuth enabled: issuer=%s, Gitea=%s", cfg.PublicBaseURL, cfg.GiteaBaseURL)
 
 	case "token":
