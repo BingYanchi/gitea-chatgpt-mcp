@@ -1,0 +1,6 @@
+ARG TUNNEL_CLIENT_VERSION=v0.0.15
+FROM ghcr.io/openai/tunnel-client:${TUNNEL_CLIENT_VERSION}
+
+LABEL org.opencontainers.image.title="Gitea ChatGPT MCP Tunnel"
+LABEL org.opencontainers.image.description="Pinned OpenAI Secure MCP Tunnel client for gitea-chatgpt-mcp"
+LABEL org.opencontainers.image.source="https://github.com/BingYanchi/gitea-chatgpt-mcp"
