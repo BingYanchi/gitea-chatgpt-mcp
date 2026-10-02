@@ -24,6 +24,13 @@ jobs:
         run: go vet ./...
       - name: Build
         run: go build ./cmd/server
+      - name: Validate Docker Compose
+        env:
+          GITEA_BASE_URL: https://git.example.com
+          GITEA_TOKEN: ci-placeholder
+          TUNNEL_ID: tunnel_0123456789abcdef0123456789abcdef
+          CONTROL_PLANE_API_KEY: sk-ci-placeholder
+        run: docker compose config >/dev/null
 
   docker:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
