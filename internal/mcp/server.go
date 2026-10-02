@@ -20,10 +20,12 @@ func New(client *gitea.Client) *mcp.Server {
 	return s
 }
 
+func boolPtr(v bool) *bool { return &v }
+
 func ro() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    true,
-		DestructiveHint: false,
+		DestructiveHint: boolPtr(false),
 		OpenWorldHint:   false,
 	}
 }
