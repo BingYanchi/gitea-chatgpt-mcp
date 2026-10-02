@@ -32,6 +32,9 @@ services:
       LOG_LEVEL: "${TUNNEL_LOG_LEVEL:-info}"
       LOG_FORMAT: "${TUNNEL_LOG_FORMAT:-json}"
       HEALTH_LISTEN_ADDR: "127.0.0.1:8080"
+      HTTP_PROXY: "${HTTP_PROXY:-}"
+      HTTPS_PROXY: "${HTTPS_PROXY:-}"
+      NO_PROXY: "${NO_PROXY:-gitea-chatgpt-mcp,localhost,127.0.0.1}"
     networks:
       - mcp-internal
 
