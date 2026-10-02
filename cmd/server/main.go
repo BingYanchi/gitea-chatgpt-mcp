@@ -54,14 +54,14 @@ func main() {
 			func(r *http.Request) *mcp.Server {
 				token, ok := auth.GiteaAccessTokenFromContext(r.Context())
 				if !ok {
-					return mcpserver.New(fallbackClient)
+					return mcpserver.NewOAuth(fallbackClient)
 				}
 				client, err := gitea.NewOAuthClient(cfg.GiteaBaseURL, token, cfg.RequestTimeout)
 				if err != nil {
 					log.Printf("create per-user Gitea client: %v", err)
-					return mcpserver.New(fallbackClient)
+					return mcpserver.NewOAuth(fallbackClient)
 				}
-				return mcpserver.New(client)
+				return mcpserver.NewOAuth(client)
 			},
 			&mcp.StreamableHTTPOptions{
 				JSONResponse: true,
