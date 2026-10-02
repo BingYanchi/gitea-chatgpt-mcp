@@ -744,7 +744,7 @@ func contains(values []string, expected string) bool {
 
 func escapeHeaderValue(value string) string {
 	value = strings.ReplaceAll(value, "\\", "\\\\")
-	return strings.ReplaceAll(value, """, "\\"")
+	return strings.ReplaceAll(value, "\"", "\\\"")
 }
 
 func writeJSON(w http.ResponseWriter, status int, value any) {
