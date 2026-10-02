@@ -1,12 +1,40 @@
 services:
   gitea-chatgpt-mcp:
-    build: .
+    image: ghcr.io/bingyanchi/gitea-chatgpt-mcp:${MCP_IMAGE_TAG:-latest}
     restart: unless-stopped
     environment:
-      GITEA_BASE_URL: ${GITEA_BASE_URL}
-      GITEA_TOKEN: ${GITEA_TOKEN}
+      AUTH_MODE: "${AUTH_MODE:-token}"
+      GITEA_BASE_URL: "${GITEA_BASE_URL}"
+      GITEA_TOKEN: "${GITEA_TOKEN:-}"
+      PUBLIC_BASE_URL: "${PUBLIC_BASE_URL:-}"
+      GITEA_OAUTH_CLIENT_ID: "${GITEA_OAUTH_CLIENT_ID:-}"
+      GITEA_OAUTH_CLIENT_SECRET: "${GITEA_OAUTH_CLIENT_SECRET:-}"
+      GITEA_OAUTH_SCOPES: "${GITEA_OAUTH_SCOPES:-read:user write:repository}"
+      OAUTH_ENCRYPTION_KEY: "${OAUTH_ENCRYPTION_KEY:-}"
       LISTEN_ADDR: ":8080"
       MCP_PATH: "/mcp"
       REQUEST_TIMEOUT: "${REQUEST_TIMEOUT:-30s}"
-    ports:
-      - "8080:8080"
+    expose:
+      - "8080"
+    networks:
+      - mcp-internal
+
+  tunnel-client:
+    image: ghcr.io/bingyanchi/gitea-chatgpt-mcp-tunnel:${TUNNEL_IMAGE_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      - gitea-chatgpt-mcp
+    environment:
+      CONTROL_PLANE_API_KEY: "${CONTROL_PLANE_API_KEY}"
+      CONTROL_PLANE_TUNNEL_ID: "${TUNNEL_ID}"
+      MCP_SERVER_URL: "http://gitea-chatgpt-mcp:8080/mcp"
+      MCP_STARTUP_WAIT_TIMEOUT: "${MCP_STARTUP_WAIT_TIMEOUT:-60s}"
+      LOG_LEVEL: "${TUNNEL_LOG_LEVEL:-info}"
+      LOG_FORMAT: "${TUNNEL_LOG_FORMAT:-json}"
+      HEALTH_LISTEN_ADDR: "127.0.0.1:8080"
+    networks:
+      - mcp-internal
+
+networks:
+  mcp-internal:
+    driver: bridge
