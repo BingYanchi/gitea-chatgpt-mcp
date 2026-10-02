@@ -26,25 +26,25 @@ func ro() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    true,
 		DestructiveHint: boolPtr(false),
-		OpenWorldHint:   false,
+		OpenWorldHint:   boolPtr(false),
 	}
 }
 
 func additiveWrite() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    false,
-		DestructiveHint: false,
+		DestructiveHint: boolPtr(false),
 		IdempotentHint:  false,
-		OpenWorldHint:   false,
+		OpenWorldHint:   boolPtr(false),
 	}
 }
 
 func destructiveWrite() *mcp.ToolAnnotations {
 	return &mcp.ToolAnnotations{
 		ReadOnlyHint:    false,
-		DestructiveHint: true,
+		DestructiveHint: boolPtr(true),
 		IdempotentHint:  false,
-		OpenWorldHint:   false,
+		OpenWorldHint:   boolPtr(false),
 	}
 }
 
@@ -229,7 +229,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "apply_changes",
 		Description: "Apply multiple file create/update/upload/rename/delete operations in one Gitea commit. Prefer a new branch and expected_head_sha for safe agent edits.",
-		Annotations: write(),
+		Annotations: destructiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in applyArgs) (*mcp.CallToolResult, any, error) {
 		if len(in.Changes) == 0 {
 			return nil, nil, fmt.Errorf("changes must not be empty")
@@ -265,7 +265,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "create_pull_request",
 		Description: "Create a Gitea pull request.",
-		Annotations: write(),
+		Annotations: additiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createPRArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CreatePullRequest(ctx, in.Owner, in.Repo, in.Title, in.Body, in.Head, in.Base, in.Draft)
 		return nil, v, err
