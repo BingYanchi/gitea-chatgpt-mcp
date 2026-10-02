@@ -10,21 +10,21 @@ import (
 )
 
 func New(client *gitea.Client) *mcp.Server {
-	return newServer(client, false)
+	return newServer(client, false, "")
 }
 
-func NewOAuth(client *gitea.Client) *mcp.Server {
-	return newServer(client, true)
+func NewOAuth(client *gitea.Client, resourceMetadataURL string) *mcp.Server {
+	return newServer(client, true, resourceMetadataURL)
 }
 
-func newServer(client *gitea.Client, oauth bool) *mcp.Server {
+func newServer(client *gitea.Client, oauth bool, resourceMetadataURL string) *mcp.Server {
 	s := mcp.NewServer(&mcp.Implementation{
 		Name:    "gitea-chatgpt-mcp",
 		Version: "0.2.0",
 	}, nil)
 
-	addReadTools(s, client, oauth)
-	addWriteTools(s, client, oauth)
+	addReadTools(s, client, oauth, resourceMetadataURL)
+	addWriteTools(s, client, oauth, resourceMetadataURL)
 	return s
 }
 
@@ -40,6 +40,25 @@ func toolMeta(oauth bool) mcp.Meta {
 			},
 		},
 	}
+}
+
+func toolResult(v any, err error, resourceMetadataURL string) (*mcp.CallToolResult, any, error) {
+	if err == nil {
+		return nil, v, nil
+	}
+	if resourceMetadataURL != "" && gitea.IsUnauthorized(err) {
+		challenge := fmt.Sprintf(`Bearer resource_metadata="%s", error="invalid_token", error_description="Authentication required"`, resourceMetadataURL)
+		return &mcp.CallToolResult{
+			Meta: mcp.Meta{
+				"mcp/www_authenticate": []string{challenge},
+			},
+			Content: []mcp.Content{
+				&mcp.TextContent{Text: "Authentication required. Connect your Gitea account and retry."},
+			},
+			IsError: true,
+		}, nil, nil
+	}
+	return nil, nil, err
 }
 
 func boolPtr(v bool) *bool { return &v }
@@ -77,7 +96,7 @@ type repoArgs struct {
 	Repo  string `json:"repo" jsonschema:"Gitea repository name"`
 }
 
-func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
+func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool, resourceMetadataURL string) {
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_current_user",
 		Description: "Get the authenticated Gitea user.",
@@ -85,7 +104,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, _ emptyArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CurrentUser(ctx)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type listReposArgs struct {
@@ -99,7 +118,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in listReposArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.ListRepositories(ctx, in.Page, in.Limit)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	mcp.AddTool(s, &mcp.Tool{
@@ -109,7 +128,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in repoArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetRepository(ctx, in.Owner, in.Repo)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type contentsArgs struct {
@@ -125,7 +144,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in contentsArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetContents(ctx, in.Owner, in.Repo, in.Path, in.Ref)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_file",
@@ -137,7 +156,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 			return nil, nil, fmt.Errorf("path is required")
 		}
 		v, err := c.GetContents(ctx, in.Owner, in.Repo, in.Path, in.Ref)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type branchesArgs struct {
@@ -153,7 +172,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in branchesArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.ListBranches(ctx, in.Owner, in.Repo, in.Page, in.Limit)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type branchArgs struct {
@@ -168,7 +187,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in branchArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetBranch(ctx, in.Owner, in.Repo, in.Branch)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type commitArgs struct {
@@ -183,7 +202,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in commitArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetCommit(ctx, in.Owner, in.Repo, in.SHA)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type compareArgs struct {
@@ -199,7 +218,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in compareArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.Compare(ctx, in.Owner, in.Repo, in.Base, in.Head)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type prArgs struct {
@@ -214,7 +233,7 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetPullRequest(ctx, in.Owner, in.Repo, int(in.Index))
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 	mcp.AddTool(s, &mcp.Tool{
 		Name:        "get_pull_request_diff",
@@ -223,11 +242,11 @@ func addReadTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: ro(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in prArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.GetPullRequestDiff(ctx, in.Owner, in.Repo, int(in.Index))
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 }
 
-func addWriteTools(s *mcp.Server, c *gitea.Client, oauth bool) {
+func addWriteTools(s *mcp.Server, c *gitea.Client, oauth bool, resourceMetadataURL string) {
 	type createBranchArgs struct {
 		Owner     string `json:"owner"`
 		Repo      string `json:"repo"`
@@ -241,7 +260,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: additiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createBranchArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CreateBranch(ctx, in.Owner, in.Repo, in.NewBranch, in.OldBranch)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type change struct {
@@ -285,7 +304,7 @@ func addWriteTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 			})
 		}
 		v, err := c.ApplyChanges(ctx, in.Owner, in.Repo, in.Branch, in.NewBranch, in.Message, in.ExpectedHeadSHA, files)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 
 	type createPRArgs struct {
@@ -304,6 +323,6 @@ func addWriteTools(s *mcp.Server, c *gitea.Client, oauth bool) {
 		Annotations: additiveWrite(),
 	}, func(ctx context.Context, _ *mcp.CallToolRequest, in createPRArgs) (*mcp.CallToolResult, any, error) {
 		v, err := c.CreatePullRequest(ctx, in.Owner, in.Repo, in.Title, in.Body, in.Head, in.Base, in.Draft)
-		return nil, v, err
+		return toolResult(v, err, resourceMetadataURL)
 	})
 }
