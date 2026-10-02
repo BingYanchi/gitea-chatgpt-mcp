@@ -1,0 +1,4 @@
+services:
+  gitea-chatgpt-mcp:
+    ports:
+      - "${MCP_PUBLISH_ADDR:-127.0.0.1:8080}:8080"
