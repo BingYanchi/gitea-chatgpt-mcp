@@ -30,7 +30,10 @@ func main() {
 	server := mcpserver.New(client)
 	handler := mcp.NewStreamableHTTPHandler(
 		func(*http.Request) *mcp.Server { return server },
-		&mcp.StreamableHTTPOptions{JSONResponse: true},
+		&mcp.StreamableHTTPOptions{
+			JSONResponse: true,
+			Stateless:    true,
+		},
 	)
 
 	mux := http.NewServeMux()
