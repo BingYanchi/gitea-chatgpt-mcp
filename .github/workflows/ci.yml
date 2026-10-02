@@ -48,8 +48,8 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Docker metadata
-        id: meta
+      - name: MCP image metadata
+        id: mcp-meta
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/bingyanchi/gitea-chatgpt-mcp
@@ -57,13 +57,35 @@ jobs:
             type=raw,value=latest
             type=sha,prefix=sha-
 
-      - name: Build and push multi-arch image
+      - name: Build and push MCP image
         uses: docker/build-push-action@v6
         with:
           context: .
+          file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          tags: ${{ steps.mcp-meta.outputs.tags }}
+          labels: ${{ steps.mcp-meta.outputs.labels }}
+          cache-from: type=gha,scope=mcp
+          cache-to: type=gha,mode=max,scope=mcp
+
+      - name: Tunnel image metadata
+        id: tunnel-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/bingyanchi/gitea-chatgpt-mcp-tunnel
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=sha-
+
+      - name: Build and push tunnel image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile.tunnel
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tunnel-meta.outputs.tags }}
+          labels: ${{ steps.tunnel-meta.outputs.labels }}
+          cache-from: type=gha,scope=tunnel
+          cache-to: type=gha,mode=max,scope=tunnel
