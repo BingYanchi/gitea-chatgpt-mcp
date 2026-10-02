@@ -3,6 +3,7 @@ package gitea
 import (
 	"bytes"
 	"context"
+	"errors"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -13,6 +14,22 @@ import (
 	"strings"
 	"time"
 )
+
+type HTTPError struct {
+	Method     string
+	Endpoint   string
+	StatusCode int
+	Body       string
+}
+
+func (e *HTTPError) Error() string {
+	return fmt.Sprintf("gitea %s %s: status %d: %s", e.Method, e.Endpoint, e.StatusCode, e.Body)
+}
+
+func IsUnauthorized(err error) bool {
+	var httpErr *HTTPError
+	return errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusUnauthorized
+}
 
 type Client struct {
 	baseURL    string
@@ -76,7 +93,12 @@ func (c *Client) do(ctx context.Context, method, endpoint string, query url.Valu
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("gitea %s %s: status %d: %s", method, endpoint, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, &HTTPError{
+			Method:     method,
+			Endpoint:   endpoint,
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(raw)),
+		}
 	}
 	if len(raw) == 0 {
 		return map[string]any{"ok": true}, nil
@@ -200,7 +222,12 @@ func (c *Client) GetPullRequestDiff(ctx context.Context, owner, repo string, ind
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, 32<<20))
 	if err != nil { return nil, err }
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("gitea GET %s: status %d: %s", endpoint, resp.StatusCode, strings.TrimSpace(string(raw)))
+		return nil, &HTTPError{
+			Method:     http.MethodGet,
+			Endpoint:   endpoint,
+			StatusCode: resp.StatusCode,
+			Body:       strings.TrimSpace(string(raw)),
+		}
 	}
 	return map[string]any{"diff": string(raw)}, nil
 }
