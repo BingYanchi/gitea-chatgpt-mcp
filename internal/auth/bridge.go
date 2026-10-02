@@ -141,6 +141,9 @@ func NewBridge(cfg BridgeConfig) (*Bridge, error) {
 }
 
 func (b *Bridge) RegisterRoutes(mux *http.ServeMux) {
+	// RFC 9728 path-aware metadata for a protected resource such as /mcp.
+	mux.HandleFunc("/.well-known/oauth-protected-resource"+b.cfg.MCPPath, b.handleProtectedResource)
+	// Keep the root location for compatibility with clients that probe the origin.
 	mux.HandleFunc("/.well-known/oauth-protected-resource", b.handleProtectedResource)
 	mux.HandleFunc("/.well-known/oauth-authorization-server", b.handleAuthorizationServerMetadata)
 	mux.HandleFunc("/.well-known/openid-configuration", b.handleAuthorizationServerMetadata)
@@ -191,7 +194,7 @@ func (b *Bridge) giteaCallbackURL() string {
 }
 
 func (b *Bridge) metadataURL() string {
-	return b.cfg.PublicBaseURL + "/.well-known/oauth-protected-resource"
+	return b.cfg.PublicBaseURL + "/.well-known/oauth-protected-resource" + b.cfg.MCPPath
 }
 
 func (b *Bridge) handleProtectedResource(w http.ResponseWriter, r *http.Request) {
@@ -202,7 +205,8 @@ func (b *Bridge) handleProtectedResource(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"resource":              b.resource(),
 		"authorization_servers": []string{b.issuer()},
-		"scopes_supported":      []string{"gitea"},
+		"scopes_supported":        []string{"gitea"},
+		"bearer_methods_supported": []string{"header"},
 	})
 }
 
