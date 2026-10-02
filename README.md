@@ -2,42 +2,31 @@
 
 A Streamable HTTP MCP server that lets ChatGPT read and modify repositories on a self-hosted Gitea instance.
 
-It is API-first: no repository clone, shell, SSH key, or Git credential is exposed to the model.
+The recommended deployment is now **OpenAI Secure MCP Tunnel + a dedicated Gitea PAT**. The MCP service remains private on the Docker network; `tunnel-client` makes outbound HTTPS connections to OpenAI and forwards MCP requests locally. No inbound MCP port or public MCP hostname is required.
 
-## Authentication modes
-
-### OAuth mode (recommended for ChatGPT)
-
-Each ChatGPT connection authenticates through your Gitea instance. The MCP server implements the MCP OAuth 2.1-facing endpoints and bridges them to Gitea's OAuth2 Authorization Code flow.
-
-Flow:
+## Architecture
 
 ```text
 ChatGPT
-  -> MCP OAuth authorize
-  -> Gitea login / consent
-  -> MCP OAuth callback
-  -> ChatGPT receives an MCP access token
-  -> each MCP request uses that user's Gitea OAuth access token
+   |
+   | OpenAI-hosted tunnel endpoint
+   v
+OpenAI Tunnel control plane
+   ^
+   | outbound HTTPS :443
+   |
+tunnel-client
+   |
+   | Docker private network
+   v
+gitea-chatgpt-mcp:8080/mcp
+   |
+   | HTTPS / Gitea REST API
+   v
+Gitea
 ```
 
-Users therefore only see and modify repositories that their own Gitea account can access.
-
-The bridge supports:
-
-- OAuth protected resource metadata
-- OAuth authorization server metadata
-- Dynamic Client Registration (DCR)
-- Authorization Code + PKCE S256
-- Gitea Authorization Code + PKCE
-- access-token refresh
-- per-request Gitea Bearer tokens
-
-The MCP-facing access/refresh tokens are encrypted opaque tokens. Gitea tokens are never sent to the model.
-
-### Token mode
-
-Legacy/service-account mode. One `GITEA_TOKEN` is used for every MCP caller.
+The tunnel container uses the official OpenAI `tunnel-client` image as its base and is pinned in `Dockerfile.tunnel`. Runtime secrets are never baked into either image.
 
 ## Current tools
 
@@ -61,42 +50,153 @@ Write:
 - `apply_changes`
 - `create_pull_request`
 
-`apply_changes` maps to Gitea's multi-file change API and supports `expected_head_sha` to reject stale agent edits.
+`apply_changes` uses Gitea's multi-file change API and supports `expected_head_sha` to reject stale agent edits.
 
-## Gitea OAuth setup
+## Recommended: Secure MCP Tunnel
 
-Create an OAuth2 application in Gitea:
+### 1. Create a dedicated Gitea PAT
 
-```text
-User Settings / Site Admin
--> Applications
--> OAuth2 Applications
-```
+Use a dedicated Gitea account or PAT with only the repository permissions ChatGPT needs.
 
-Use this redirect URI:
+Do not commit the PAT.
 
-```text
-https://gitea-mcp.example.com/oauth/gitea/callback
-```
+### 2. Create an OpenAI MCP tunnel
 
-Keep the generated Client ID and Client Secret.
-
-The default upstream scopes are:
+Create a tunnel in OpenAI Platform tunnel settings. Record the resulting tunnel ID:
 
 ```text
-read:user write:repository
+tunnel_...
 ```
 
-On Gitea 1.23+, granular OAuth scopes make `write:repository` cover repository reads/writes, files, pull requests and related `/repos/*` operations, while `read:user` covers authenticated-user operations.
+Create or choose the control-plane API key permitted to use that tunnel.
 
-## Configuration
+The tunnel client needs outbound HTTPS to OpenAI and network access to the MCP service. It does not need inbound Internet access.
+
+### 3. Configure
 
 ```bash
 cp .env.example .env
-openssl rand -base64 32
 ```
 
-OAuth configuration:
+Minimal tunnel configuration:
+
+```env
+AUTH_MODE=token
+
+GITEA_BASE_URL=https://git.example.com
+GITEA_TOKEN=your-dedicated-gitea-pat
+
+TUNNEL_ID=tunnel_...
+CONTROL_PLANE_API_KEY=sk-...
+```
+
+Optional image pinning:
+
+```env
+MCP_IMAGE_TAG=latest
+TUNNEL_IMAGE_TAG=latest
+```
+
+For production you can pin the generated `sha-...` tags instead of tracking `latest`.
+
+### 4. Start
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+Watch logs:
+
+```bash
+docker compose logs -f gitea-chatgpt-mcp tunnel-client
+```
+
+The default Compose deployment intentionally has **no `ports:` mapping** for the MCP service. `tunnel-client` reaches it internally at:
+
+```text
+http://gitea-chatgpt-mcp:8080/mcp
+```
+
+The tunnel sidecar receives these runtime values through Compose:
+
+```text
+CONTROL_PLANE_API_KEY
+CONTROL_PLANE_TUNNEL_ID
+MCP_SERVER_URL
+MCP_STARTUP_WAIT_TIMEOUT
+```
+
+The repository-facing variables `TUNNEL_ID` and `CONTROL_PLANE_API_KEY` are mapped to the names expected by the official OpenAI client.
+
+### 5. Connect from ChatGPT
+
+When creating the custom MCP connection in ChatGPT:
+
+```text
+Connection: Tunnel
+Tunnel: select the tunnel you created
+Authentication: None
+```
+
+Do not enter the private Docker URL in ChatGPT. ChatGPT calls the OpenAI-hosted tunnel endpoint; the locally running tunnel client forwards those calls to the private MCP container.
+
+With `AUTH_MODE=token`, Gitea authentication is handled by the MCP service using the dedicated PAT, so ChatGPT itself does not need OAuth.
+
+## Docker images
+
+A push to `main` builds and publishes both Linux `amd64` and `arm64` images:
+
+```text
+ghcr.io/bingyanchi/gitea-chatgpt-mcp:latest
+ghcr.io/bingyanchi/gitea-chatgpt-mcp:sha-...
+
+ghcr.io/bingyanchi/gitea-chatgpt-mcp-tunnel:latest
+ghcr.io/bingyanchi/gitea-chatgpt-mcp-tunnel:sha-...
+```
+
+The tunnel wrapper is based on a pinned release of:
+
+```text
+ghcr.io/openai/tunnel-client
+```
+
+No OpenAI or Gitea secrets are present at build time.
+
+## Updating
+
+```bash
+docker compose pull
+docker compose up -d --force-recreate
+```
+
+## Optional: direct/public MCP mode
+
+If you need to access the MCP server directly for debugging or a public HTTPS deployment, use the override:
+
+```bash
+docker compose -f compose.yml -f compose.public.yml up -d
+```
+
+By default it publishes only on loopback:
+
+```text
+127.0.0.1:8080 -> container:8080
+```
+
+Override with:
+
+```env
+MCP_PUBLISH_ADDR=0.0.0.0:8080
+```
+
+Do not expose token-mode MCP directly to the public Internet unless another trusted authentication/access-control layer protects it.
+
+## Optional: per-user Gitea OAuth mode
+
+OAuth support remains available for direct/public deployments.
+
+Example:
 
 ```env
 AUTH_MODE=oauth
@@ -107,75 +207,26 @@ PUBLIC_BASE_URL=https://gitea-mcp.example.com
 GITEA_OAUTH_CLIENT_ID=...
 GITEA_OAUTH_CLIENT_SECRET=...
 GITEA_OAUTH_SCOPES=read:user write:repository
-
 OAUTH_ENCRYPTION_KEY=<base64 32-byte random key>
-
-LISTEN_ADDR=:8080
-MCP_PATH=/mcp
-REQUEST_TIMEOUT=30s
 ```
 
-`PUBLIC_BASE_URL` is the externally reachable HTTPS origin of this MCP server. Do not include `/mcp`.
+Create the Gitea OAuth2 application with callback:
 
-The encryption key must remain stable. Rotating it intentionally invalidates existing ChatGPT OAuth clients, authorization codes, access tokens, and refresh tokens.
-
-Token-mode configuration:
-
-```env
-AUTH_MODE=token
-GITEA_BASE_URL=https://git.example.com
-GITEA_TOKEN=...
+```text
+https://gitea-mcp.example.com/oauth/gitea/callback
 ```
 
-## Run
-
-Using the published GHCR image:
-
-```yaml
-services:
-  gitea-chatgpt-mcp:
-    image: ghcr.io/bingyanchi/gitea-chatgpt-mcp:latest
-    restart: unless-stopped
-    env_file:
-      - .env
-    ports:
-      - "8080:8080"
-```
-
-Then:
+Generate the bridge encryption key with:
 
 ```bash
-docker compose pull
-docker compose up -d
+openssl rand -base64 32
 ```
 
-Health:
-
-```bash
-curl http://127.0.0.1:8080/healthz
-```
-
-MCP:
+OAuth endpoints include:
 
 ```text
-https://gitea-mcp.example.com/mcp
-```
-
-OAuth discovery:
-
-```text
-https://gitea-mcp.example.com/.well-known/oauth-protected-resource
-https://gitea-mcp.example.com/.well-known/oauth-authorization-server
-```
-
-## Reverse proxy
-
-Expose the entire origin, not only `/mcp`, because OAuth also needs:
-
-```text
-/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
 /.well-known/oauth-authorization-server
-/.well-known/openid-configuration
 /oauth/register
 /oauth/authorize
 /oauth/token
@@ -183,41 +234,19 @@ Expose the entire origin, not only `/mcp`, because OAuth also needs:
 /mcp
 ```
 
-For example, proxy `https://gitea-mcp.example.com/*` to `http://127.0.0.1:8080`.
-
-## ChatGPT connection
-
-Add the HTTPS MCP endpoint:
-
-```text
-https://gitea-mcp.example.com/mcp
-```
-
-ChatGPT should discover the protected-resource metadata, register an OAuth public client, and show the Gitea login/consent flow. After linking, MCP calls carry an MCP Bearer token, which the bridge validates and maps to the authenticated user's Gitea OAuth token.
-
-## Recommended edit flow
-
-1. `get_branch` and record the head SHA.
-2. `get_tree` / `get_file`.
-3. `apply_changes` with `new_branch` and `expected_head_sha`.
-4. `compare_refs`.
-5. `create_pull_request`.
+For the private Tunnel deployment, `AUTH_MODE=token` is simpler and is the recommended configuration for a single trusted user/team service account.
 
 ## Security notes
 
-- No raw arbitrary-HTTP MCP tool.
-- No shell or Git CLI tool.
-- Gitea Client Secret remains server-side.
-- Gitea OAuth access and refresh tokens are encrypted inside opaque MCP tokens.
-- OAuth authorization codes require PKCE S256 and are one-time-use while the server process is running.
-- MCP tokens are bound to the configured MCP resource URL.
-- The Gitea OAuth callback state is authenticated/encrypted and short-lived.
-- Run OAuth mode behind HTTPS.
-- `OAUTH_ENCRYPTION_KEY` is sensitive and should be supplied as a secret.
-
-## Compatibility
-
-OAuth granular scopes require Gitea 1.23+ for the default restrictive scope set. Older Gitea installations can override `GITEA_OAUTH_SCOPES`, for example to the legacy `repo` scope.
+- No arbitrary raw HTTP MCP tool is exposed.
+- No shell or Git CLI tool is exposed.
+- Gitea PATs and OpenAI API keys are runtime secrets only.
+- The default Compose file does not publish the MCP port.
+- Tunnel traffic is initiated outbound from your environment.
+- Use a dedicated Gitea service account/PAT and scope it as narrowly as practical.
+- Prefer Docker secrets or another secret manager over plaintext environment files where available.
+- Do not commit `.env`.
+- The Secure MCP Tunnel is intended for private MCP connections; public plugin distribution requires a stable public HTTPS MCP endpoint.
 
 ## License
 
