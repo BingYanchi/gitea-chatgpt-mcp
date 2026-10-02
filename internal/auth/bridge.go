@@ -158,9 +158,14 @@ func (b *Bridge) RequireAuth(next http.Handler) http.Handler {
 		header := strings.TrimSpace(r.Header.Get("Authorization"))
 		parts := strings.Fields(header)
 		if len(parts) == 0 {
-			// No credentials were supplied. This is an authentication challenge,
-			// not an invalid-token response. OpenAI uses this challenge to start
-			// OAuth discovery for a newly connected MCP server.
+			// Let Streamable HTTP POST requests reach initialize/tools/list and
+			// tool handlers so clients can inspect OAuth securitySchemes and
+			// receive tool-level mcp/www_authenticate challenges. A plain GET
+			// still returns the standard RFC 9728 discovery challenge.
+			if r.Method == http.MethodPost {
+				next.ServeHTTP(w, r)
+				return
+			}
 			b.challenge(w, "", "")
 			return
 		}
