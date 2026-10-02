@@ -70,7 +70,17 @@ tunnel_...
 
 Create or choose the control-plane API key permitted to use that tunnel.
 
-The tunnel client needs outbound HTTPS to OpenAI and network access to the MCP service. It does not need inbound Internet access.
+The tunnel client needs outbound HTTPS to `api.openai.com:443` and network access to the MCP service. It does not need inbound Internet access.
+
+If the host cannot reach OpenAI directly, configure a normal outbound proxy:
+
+```env
+HTTPS_PROXY=http://proxy.example.com:7890
+HTTP_PROXY=http://proxy.example.com:7890
+NO_PROXY=gitea-chatgpt-mcp,localhost,127.0.0.1
+```
+
+The official client honors standard proxy environment variables when no more-specific tunnel proxy option is set, so OpenAI control-plane traffic can use the proxy while the Docker-internal MCP hop stays direct.
 
 ### 3. Configure
 
