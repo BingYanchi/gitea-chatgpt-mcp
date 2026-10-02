@@ -45,6 +45,7 @@ func main() {
 			log.Fatal(err)
 		}
 		bridge.RegisterRoutes(mux)
+		resourceMetadataURL := cfg.PublicBaseURL + "/.well-known/oauth-protected-resource" + cfg.MCPPath
 
 		fallbackClient, err := gitea.NewOAuthClient(cfg.GiteaBaseURL, "unauthenticated", cfg.RequestTimeout)
 		if err != nil {
@@ -54,14 +55,14 @@ func main() {
 			func(r *http.Request) *mcp.Server {
 				token, ok := auth.GiteaAccessTokenFromContext(r.Context())
 				if !ok {
-					return mcpserver.NewOAuth(fallbackClient)
+					return mcpserver.NewOAuth(fallbackClient, resourceMetadataURL)
 				}
 				client, err := gitea.NewOAuthClient(cfg.GiteaBaseURL, token, cfg.RequestTimeout)
 				if err != nil {
 					log.Printf("create per-user Gitea client: %v", err)
-					return mcpserver.NewOAuth(fallbackClient)
+					return mcpserver.NewOAuth(fallbackClient, resourceMetadataURL)
 				}
-				return mcpserver.NewOAuth(client)
+				return mcpserver.NewOAuth(client, resourceMetadataURL)
 			},
 			&mcp.StreamableHTTPOptions{
 				JSONResponse: true,
