@@ -157,8 +157,15 @@ func (b *Bridge) RequireAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		header := strings.TrimSpace(r.Header.Get("Authorization"))
 		parts := strings.Fields(header)
+		if len(parts) == 0 {
+			// No credentials were supplied. This is an authentication challenge,
+			// not an invalid-token response. OpenAI uses this challenge to start
+			// OAuth discovery for a newly connected MCP server.
+			b.challenge(w, "", "")
+			return
+		}
 		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			b.challenge(w, "invalid_token", "A Gitea connection is required")
+			b.challenge(w, "invalid_token", "The Authorization header is invalid")
 			return
 		}
 		var token accessTokenPayload
@@ -656,10 +663,14 @@ func (b *Bridge) challenge(w http.ResponseWriter, oauthError, description string
 	w.Header().Set("WWW-Authenticate", value)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	_ = json.NewEncoder(w).Encode(map[string]any{
-		"error":             oauthError,
-		"error_description": description,
-	})
+	body := map[string]any{}
+	if oauthError != "" {
+		body["error"] = oauthError
+	}
+	if description != "" {
+		body["error_description"] = description
+	}
+	_ = json.NewEncoder(w).Encode(body)
 }
 
 func (b *Bridge) redirectOAuthError(w http.ResponseWriter, r *http.Request, redirectURI, state, code, description string) {
