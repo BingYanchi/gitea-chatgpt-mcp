@@ -15,20 +15,33 @@ import (
 )
 
 type Client struct {
-	baseURL string
-	token   string
-	http    *http.Client
+	baseURL    string
+	token      string
+	authScheme string
+	http       *http.Client
 }
 
 func NewClient(baseURL, token string, timeout time.Duration) (*Client, error) {
+	return newClient(baseURL, token, "token", timeout)
+}
+
+func NewOAuthClient(baseURL, token string, timeout time.Duration) (*Client, error) {
+	return newClient(baseURL, token, "Bearer", timeout)
+}
+
+func newClient(baseURL, token, authScheme string, timeout time.Duration) (*Client, error) {
 	u, err := url.Parse(strings.TrimRight(baseURL, "/"))
 	if err != nil || u.Scheme == "" || u.Host == "" {
 		return nil, fmt.Errorf("invalid Gitea base URL")
 	}
+	if strings.TrimSpace(token) == "" {
+		return nil, fmt.Errorf("Gitea access token is required")
+	}
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		token:   token,
-		http:    &http.Client{Timeout: timeout},
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		token:      token,
+		authScheme: authScheme,
+		http:       &http.Client{Timeout: timeout},
 	}, nil
 }
 
@@ -46,7 +59,7 @@ func (c *Client) do(ctx context.Context, method, endpoint string, query url.Valu
 		return nil, err
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "token "+c.token)
+	req.Header.Set("Authorization", c.authScheme+" "+c.token)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
@@ -179,7 +192,7 @@ func (c *Client) GetPullRequestDiff(ctx context.Context, owner, repo string, ind
 	endpoint := fmt.Sprintf("/repos/%s/%s/pulls/%d.diff", esc(owner), esc(repo), index)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1"+endpoint, nil)
 	if err != nil { return nil, err }
-	req.Header.Set("Authorization", "token "+c.token)
+	req.Header.Set("Authorization", c.authScheme+" "+c.token)
 	req.Header.Set("Accept", "text/plain")
 	resp, err := c.http.Do(req)
 	if err != nil { return nil, err }
